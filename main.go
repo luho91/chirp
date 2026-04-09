@@ -10,6 +10,7 @@ func main() {
 	server := http.Server{}
 	server.Handler = serveMux
 	server.Addr = ":8080"
+	serveMux.Handle("/", http.FileServer(http.Dir(".")))
 	err := server.ListenAndServe()
 
 	if err != nil {
