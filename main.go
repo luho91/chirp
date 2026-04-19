@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "github.com/lib/pq"
+	godotenv "github.com/joho/godotenv"
 	database "github.com/luho91/chirp/internal/database"
 	"database/sql"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 type apiConfig struct {
 	fileserverHits atomic.Int32
 	dbQueries *database.Queries
+	platform string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -32,7 +34,12 @@ func (cfg *apiConfig) metricsRead(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *apiConfig) metricsReset(w http.ResponseWriter, r *http.Request) {
+	if cfg.platform != "dev" {
+		w.WriteHeader(403)
+		return
+	}
 	cfg.fileserverHits.Store(0)
+	cfg.dbQueries.DeleteAllUsers(r.Context())
 }
 
 func healthz(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +101,47 @@ func (cfg *apiConfig) validateChirp(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
+	type parameters struct {
+		Email string `json:"email"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+
+	err := decoder.Decode(&params)
+
+	if err != nil {
+		w.WriteHeader(500)
+		fmt.Println("decode fail")
+		return
+	} else {
+		user, err := cfg.dbQueries.CreateUser(r.Context(), params.Email)
+		if err != nil {
+			w.WriteHeader(500)
+			fmt.Println("create user fail", err)
+			return
+		} else {
+			w.WriteHeader(201)
+			respBody := User {
+				ID:			user.ID,
+				CreatedAt: 	user.CreatedAt,
+				UpdatedAt:	user.UpdatedAt,
+				Email:		user.Email,
+			}
+			data, err := json.Marshal(respBody)
+			if err != nil {
+				w.WriteHeader(500)
+				fmt.Println("unmarshal fail")
+				return
+			}
+			w.Write(data)
+		}
+	}
+}
+
 func main() {
+	godotenv.Load()
 	dbURL := os.Getenv("DB_URL")
 	db, err := sql.Open("postgres", dbURL)
 
@@ -109,11 +156,13 @@ func main() {
 	server.Addr = ":8080"
 	apiCfg := apiConfig{}
 	apiCfg.dbQueries = dbQueries
+	apiCfg.platform = os.Getenv("PLATFORM")
 	serveMux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(".")))))
 	serveMux.HandleFunc("GET /api/healthz", healthz)
 	serveMux.HandleFunc("GET /admin/metrics", apiCfg.metricsRead)
 	serveMux.HandleFunc("POST /admin/reset", apiCfg.metricsReset)
 	serveMux.HandleFunc("POST /api/validate_chirp", apiCfg.validateChirp)
+	serveMux.HandleFunc("POST /api/users", apiCfg.createUser)
 
 	err = server.ListenAndServe()
 
