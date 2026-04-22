@@ -4,6 +4,7 @@ import (
 	_ "github.com/lib/pq"
 	godotenv "github.com/joho/godotenv"
 	database "github.com/luho91/chirp/internal/database"
+	"github.com/google/uuid"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -49,58 +50,6 @@ func healthz(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("OK"))
 }
 
-func (cfg *apiConfig) validateChirp(w http.ResponseWriter, r *http.Request) {
-	type parameters struct {
-		Body string `json:"body"`
-	}
-
-	type returnVals struct {
-		Error string `json:"error"`
-		Valid bool `json:"valid"`
-		CleanedBody string `json:"cleaned_body"`
-	}
-
-	naziGermany := []string {"kerfuffle", "sharbert", "fornax"}
-
-	decoder := json.NewDecoder(r.Body)
-	params := parameters{}
-	err := decoder.Decode(&params)
-
-	respBody := returnVals{}
-
-	w.Header().Set("Content-Type", "application/json")
-
-	if err != nil {
-		w.WriteHeader(500)
-		respBody.Error = "Something went wrong during JSON decode"
-	} else if len(params.Body) > 140 {
-		w.WriteHeader(400)
-		respBody.Error = "Chirp is too long"
-	} else {
-		respBody.Valid = true
-		w.WriteHeader(200)
-		words := strings.Split(params.Body, " ")
-		for _, toCensor := range naziGermany {
-			for i, word := range words {
-				if strings.ToLower(word) == toCensor {
-					words[i] = "****"
-				}
-			}
-		}
-		respBody.CleanedBody = strings.Join(words, " ")
-	}
-
-	dat, err := json.Marshal(respBody)
-	if err != nil {
-		respBody.Error = "Something went wrong during JSON encode"
-		w.WriteHeader(500)
-		return
-	}
-
-	w.Write(dat)
-
-}
-
 func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
 		Email string `json:"email"`
@@ -140,6 +89,151 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func validateChirp(chirpContent string) (naziGermanyConformMessage string, isValidLength bool) {
+	naziGermany := []string {"kerfuffle", "sharbert", "fornax"}
+
+	if len(chirpContent) > 140 {
+		return chirpContent, false
+	} else {
+		words := strings.Split(chirpContent, " ")
+		for _, toCensor := range naziGermany {
+			for i, word := range words {
+				if strings.ToLower(word) == toCensor {
+					words[i] = "****"
+				}
+			}
+		}
+		return strings.Join(words, " "), true
+	}
+}
+
+func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
+	type parameters struct {
+		Body		string		`json:"body"`
+		UserID		uuid.UUID	`json:"user_id"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+
+	w.Header().Set("Content-Type", "application/json")
+
+	if err != nil {
+		w.WriteHeader(500)
+		return
+	}
+
+	newBody, isValidLength := validateChirp(params.Body)
+	if !isValidLength {
+		w.WriteHeader(500)
+		return
+	}
+	params.Body = newBody
+	
+	chirp, err := cfg.dbQueries.CreateChirp(r.Context(), database.CreateChirpParams {
+		UserID:	params.UserID,
+		Body:	params.Body,
+	})
+	if err != nil {
+		w.WriteHeader(500)
+		fmt.Println("create chirp fail", err)
+		return
+	} else {
+		w.WriteHeader(201)
+		respBody := Chirp {
+			ID:			chirp.ID,
+			CreatedAt: 	chirp.CreatedAt,
+			UpdatedAt:	chirp.UpdatedAt,
+			Body:		chirp.Body,
+			UserID:		chirp.UserID,
+		}
+		data, err := json.Marshal(respBody)
+		if err != nil {
+			w.WriteHeader(500)
+			fmt.Println("unmarshal fail", err)
+			return
+		}
+		w.Write(data)
+	}
+}
+
+func (cfg *apiConfig) getChirps(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	chirps, err := cfg.dbQueries.GetChirps(r.Context())
+
+	if err != nil {
+		w.WriteHeader(500)
+		fmt.Println("get chirp fail", err)
+		return
+	}
+
+	w.WriteHeader(200)
+	outChirps := []Chirp {}
+	for _, chirp := range chirps {
+		outChirps = append(outChirps, Chirp {
+			ID:			chirp.ID,
+			UserID:		chirp.UserID,
+			Body:		chirp.Body,
+			CreatedAt:	chirp.CreatedAt,
+			UpdatedAt:	chirp.UpdatedAt,
+		})
+	}
+
+	data, err := json.Marshal(outChirps)
+	if err != nil {
+		w.WriteHeader(500)
+		fmt.Println("unmarshal fail", err)
+		return
+	}
+	w.Write(data)
+}
+
+func (cfg *apiConfig) getChirp(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	chirpId, err := uuid.Parse(r.PathValue("chirpID"))
+
+	if err != nil {
+		w.WriteHeader(500)
+		fmt.Println("string to uuid fail", err)
+		return
+	}
+
+	chirp, err := cfg.dbQueries.GetChirp(r.Context(), chirpId)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			w.WriteHeader(404)
+			fmt.Println("chirp not found")
+			return
+		}
+		w.WriteHeader(500)
+		fmt.Println("get chirp fail", err)
+		return
+	}
+
+	if chirp.ID == uuid.Nil {
+	}
+
+	w.WriteHeader(200)
+	outChirp := Chirp {
+		ID:			chirp.ID,
+		UserID:		chirp.UserID,
+		Body:		chirp.Body,
+		CreatedAt:	chirp.CreatedAt,
+		UpdatedAt:	chirp.UpdatedAt,
+	}
+
+	data, err := json.Marshal(outChirp)
+	if err != nil {
+		w.WriteHeader(500)
+		fmt.Println("unmarshal fail", err)
+		return
+	}
+	w.Write(data)
+}
+
 func main() {
 	godotenv.Load()
 	dbURL := os.Getenv("DB_URL")
@@ -161,8 +255,10 @@ func main() {
 	serveMux.HandleFunc("GET /api/healthz", healthz)
 	serveMux.HandleFunc("GET /admin/metrics", apiCfg.metricsRead)
 	serveMux.HandleFunc("POST /admin/reset", apiCfg.metricsReset)
-	serveMux.HandleFunc("POST /api/validate_chirp", apiCfg.validateChirp)
 	serveMux.HandleFunc("POST /api/users", apiCfg.createUser)
+	serveMux.HandleFunc("POST /api/chirps", apiCfg.createChirp)
+	serveMux.HandleFunc("GET /api/chirps", apiCfg.getChirps)
+	serveMux.HandleFunc("GET /api/chirps/{chirpID}", apiCfg.getChirp)
 
 	err = server.ListenAndServe()
 
