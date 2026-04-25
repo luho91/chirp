@@ -11,12 +11,14 @@ import (
 	"net/http"
 	"os"
 	"sync/atomic"
+	"time"
 )
 
 type apiConfig struct {
-	fileserverHits atomic.Int32
-	dbQueries *database.Queries
-	platform string
+	fileserverHits	atomic.Int32
+	dbQueries		*database.Queries
+	platform		string
+	appSecret		string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -40,9 +42,6 @@ func (cfg *apiConfig) metricsReset(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg.fileserverHits.Store(0)
 	cfg.dbQueries.DeleteAllUsers(r.Context())
-	/** if err != nil {
-		fmt.Println("truncate fail", err)
-	} **/
 }
 
 func healthz(w http.ResponseWriter, r *http.Request) {
@@ -56,8 +55,9 @@ func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	type parameters struct {
-		Password	string
-		Email		string
+		Password			string	`json:"password"`
+		Email				string	`json:"email"`
+		ExpiresInSeconds	int		`json:"expires_in_seconds"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -69,6 +69,14 @@ func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("decode fail", err)
 		return
 	}
+
+	expires := 60 * 60
+
+	if params.ExpiresInSeconds != 0 { 
+		expires = params.ExpiresInSeconds
+	}
+
+	expireTime := time.Duration(expires) * time.Second
 
 	user, err := cfg.dbQueries.GetUser(r.Context(), params.Email)
 
@@ -91,7 +99,20 @@ func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("forbidden")
 		return
 	}
+
+	token, err := auth.MakeJWT(user.ID, cfg.appSecret, expireTime)
 	
+	if err != nil {
+		w.WriteHeader(500)
+		fmt.Println("make token fail", err)
+		return
+	}
+
+	user.JwtToken = sql.NullString {
+		String:	token,
+		Valid:	true,
+	}
+
 	res, err := userJsonFromQueryData(user)
 
 	if err != nil {
@@ -121,6 +142,7 @@ func main() {
 	apiCfg := apiConfig{}
 	apiCfg.dbQueries = dbQueries
 	apiCfg.platform = os.Getenv("PLATFORM")
+	apiCfg.appSecret = os.Getenv("APP_SECRET")
 	serveMux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(".")))))
 	serveMux.HandleFunc("GET /api/healthz", healthz)
 	serveMux.HandleFunc("GET /admin/metrics", apiCfg.metricsRead)

@@ -15,6 +15,7 @@ type User struct {
 	CreatedAt	time.Time	`json:"created_at"`
 	UpdatedAt	time.Time	`json:"updated_at"`
 	Email		string		`json:"email"`
+	Token		string		`json:"token"`
 }
 
 func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +69,7 @@ func userJsonFromQueryData(u database.User) ([]byte, error) {
 		CreatedAt:	u.CreatedAt,
 		UpdatedAt:	u.UpdatedAt,
 		Email:		u.Email,
+		Token:		u.JwtToken.String,
 	})
 
 	return user, err

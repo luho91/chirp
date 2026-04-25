@@ -3,6 +3,7 @@ package main
 import(
 	_ "github.com/lib/pq"
 	database "github.com/luho91/chirp/internal/database"
+	auth "github.com/luho91/chirp/internal/auth"
 	"github.com/google/uuid"
 	"database/sql"
 	"encoding/json"
@@ -41,6 +42,7 @@ func validateChirp(chirpContent string) (naziGermanyConformMessage string, isVal
 func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
 		Body		string		`json:"body"`
+		Token		string		`json:"token"`
 		UserID		uuid.UUID	`json:"user_id"`
 	}
 
@@ -62,6 +64,24 @@ func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	params.Body = newBody
+
+	token, err := auth.GetBearerToken(r.Header)
+
+	if err != nil {
+		w.WriteHeader(500)
+		fmt.Println("token fail", err)
+		return
+	}
+
+	userID, err := auth.ValidateJWT(token, cfg.appSecret)
+
+	if err != nil {
+		w.WriteHeader(401)
+		fmt.Println("token validation fail", err, cfg.appSecret)
+		return
+	}
+
+	params.UserID = userID
 	
 	chirp, err := cfg.dbQueries.CreateChirp(r.Context(), database.CreateChirpParams {
 		UserID:	params.UserID,

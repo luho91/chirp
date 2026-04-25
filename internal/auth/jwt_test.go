@@ -4,6 +4,7 @@ import (
 	"testing"
 	"github.com/google/uuid"
 	"time"
+	"net/http"
 )
 
 func TestCreateJWT(t *testing.T) {
@@ -27,6 +28,33 @@ func TestCreateJWT(t *testing.T) {
 		_, actual := MakeJWT(userID, c.input, time.Duration(10 * time.Second))
 		if c.expected != actual {
 			t.Errorf("Token was not successfully generated: %v", actual)
+		}
+	}
+}
+
+func TestGetBearerToken(t *testing.T) {
+	header := http.Header {}
+
+	header.Set("Authorization", "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5")
+
+	cases := []struct {
+		input		string
+		expected	string
+	} {
+		{
+			input:		"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5",
+			expected:	"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5",	
+		},
+	}
+
+	for _, c := range cases {
+		actual, err := GetBearerToken(header)
+		if err != nil {
+			t.Errorf("An error happened: %v", err)
+		}
+
+		if c.expected != actual {
+			t.Errorf("Tokens do not match:\nexpected: %v\n got: %v", c.expected, actual)
 		}
 	}
 }

@@ -5,6 +5,7 @@
 package database
 
 import (
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,4 +25,5 @@ type User struct {
 	UpdatedAt      time.Time
 	Email          string
 	HashedPassword string
+	JwtToken       sql.NullString
 }
