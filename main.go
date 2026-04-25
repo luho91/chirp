@@ -4,14 +4,11 @@ import (
 	_ "github.com/lib/pq"
 	godotenv "github.com/joho/godotenv"
 	database "github.com/luho91/chirp/internal/database"
-	auth "github.com/luho91/chirp/internal/auth"
-	"database/sql"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"sync/atomic"
-	"time"
+	"database/sql"
 )
 
 type apiConfig struct {
@@ -19,110 +16,6 @@ type apiConfig struct {
 	dbQueries		*database.Queries
 	platform		string
 	appSecret		string
-}
-
-func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cfg.fileserverHits.Add(1)
-		next.ServeHTTP(w, r)
-	})
-}
-
-func (cfg *apiConfig) metricsRead(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(200)
-	h := w.Header()
-	h["Content-Type"] = []string {"text/html"}
-	w.Write([]byte(fmt.Sprintf("<html><body><h1>Welcome, Chirpy Admin</h1><p>Chirpy has been visited %d times!</p></body></html>", cfg.fileserverHits.Load())))
-}
-
-func (cfg *apiConfig) metricsReset(w http.ResponseWriter, r *http.Request) {
-	if cfg.platform != "dev" {
-		w.WriteHeader(403)
-		return
-	}
-	cfg.fileserverHits.Store(0)
-	cfg.dbQueries.DeleteAllUsers(r.Context())
-}
-
-func healthz(w http.ResponseWriter, r *http.Request) {
-	h := w.Header()
-	h["Content-Type"] = []string {"text/plain; charset=utf-8"}
-	w.WriteHeader(200)
-	_, _ = w.Write([]byte("OK"))
-}
-
-func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	type parameters struct {
-		Password			string	`json:"password"`
-		Email				string	`json:"email"`
-		ExpiresInSeconds	int		`json:"expires_in_seconds"`
-	}
-
-	decoder := json.NewDecoder(r.Body)
-	params := parameters{}
-	err := decoder.Decode(&params)
-
-	if err != nil {
-		w.WriteHeader(500)
-		fmt.Println("decode fail", err)
-		return
-	}
-
-	expires := 60 * 60
-
-	if params.ExpiresInSeconds != 0 { 
-		expires = params.ExpiresInSeconds
-	}
-
-	expireTime := time.Duration(expires) * time.Second
-
-	user, err := cfg.dbQueries.GetUser(r.Context(), params.Email)
-
-	if err != nil {
-		w.WriteHeader(404)
-		fmt.Println("user not found", err)
-		return
-	}
-
-	authenticated, err := auth.CheckPasswordHash(params.Password, user.HashedPassword)
-
-	if err != nil {
-		w.WriteHeader(500)
-		fmt.Println("check password fail", err)
-		return
-	}
-
-	if !authenticated {
-		w.WriteHeader(401)
-		fmt.Println("forbidden")
-		return
-	}
-
-	token, err := auth.MakeJWT(user.ID, cfg.appSecret, expireTime)
-	
-	if err != nil {
-		w.WriteHeader(500)
-		fmt.Println("make token fail", err)
-		return
-	}
-
-	user.JwtToken = sql.NullString {
-		String:	token,
-		Valid:	true,
-	}
-
-	res, err := userJsonFromQueryData(user)
-
-	if err != nil {
-		w.WriteHeader(500)
-		fmt.Println("json marshal fail", err)
-		return
-	}
-
-	w.WriteHeader(200)
-	w.Write(res)
 }
 
 func main() {
@@ -151,7 +44,12 @@ func main() {
 	serveMux.HandleFunc("POST /api/chirps", apiCfg.createChirp)
 	serveMux.HandleFunc("GET /api/chirps", apiCfg.getChirps)
 	serveMux.HandleFunc("GET /api/chirps/{chirpID}", apiCfg.getChirp)
+	serveMux.HandleFunc("DELETE /api/chirps/{chirpID}", apiCfg.deleteChirp)
 	serveMux.HandleFunc("POST /api/login", apiCfg.login)
+	serveMux.HandleFunc("POST /api/refresh", apiCfg.refresh)
+	serveMux.HandleFunc("POST /api/revoke", apiCfg.revoke)
+	serveMux.HandleFunc("PUT /api/users", apiCfg.putUser)
+	serveMux.HandleFunc("POST /api/polka/webhooks", apiCfg.premiumUser)
 
 	err = server.ListenAndServe()
 

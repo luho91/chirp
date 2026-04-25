@@ -9,8 +9,8 @@ import(
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
+	"strings"
 )
 
 type Chirp struct {
@@ -186,4 +186,47 @@ func (cfg *apiConfig) getChirp(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
+func (cfg *apiConfig) deleteChirp(w http.ResponseWriter, r *http.Request) {
+	chirpId, err := uuid.Parse(r.PathValue("chirpID"))
+
+	chirp, err := cfg.dbQueries.GetChirp(r.Context(), chirpId)
+
+	if err != nil {
+		w.WriteHeader(500)
+		fmt.Println("get chirp fail", err)
+		return
+	}
+
+	token, err := auth.GetBearerToken(r.Header)
+	
+	if err != nil {
+		w.WriteHeader(401)
+		fmt.Println("token fail", err)
+		return
+	}
+
+	userId, err := auth.ValidateJWT(token, cfg.appSecret)
+
+	if userId != chirp.UserID {
+		w.WriteHeader(403)
+		fmt.Println("unauthorized")
+		return
+	}
+
+	if err != nil {
+		w.WriteHeader(401)
+		fmt.Println("token validation fail", err)
+		return
+	}
+
+	err = cfg.dbQueries.DeleteChirp(r.Context(), chirpId)
+
+	if err != nil {
+		w.WriteHeader(404)
+		fmt.Println("not found?", err)
+		return
+	}
+
+	w.WriteHeader(204)
+}
 

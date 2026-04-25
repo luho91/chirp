@@ -8,6 +8,8 @@ import (
 	"errors"
 	"strings"
 	"fmt"
+	"crypto/rand"
+	"encoding/hex"
 )
 
 func MakeJWT(userId uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, error) {
@@ -58,4 +60,14 @@ func GetBearerToken(headers http.Header) (string, error) {
 	tokenString := strings.TrimPrefix(h, "Bearer ")		
 	
 	return tokenString, nil	
+}
+
+func MakeRefreshToken() string {
+	bytes := make([]byte, 32)
+
+	rand.Read(bytes)
+
+	r := hex.EncodeToString(bytes)
+
+	return r
 }

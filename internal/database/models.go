@@ -19,6 +19,16 @@ type Chirp struct {
 	Body      string
 }
 
+type RefreshToken struct {
+	ID        uuid.UUID
+	Token     string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	UserID    uuid.UUID
+	ExpiresAt time.Time
+	RevokedAt sql.NullTime
+}
+
 type User struct {
 	ID             uuid.UUID
 	CreatedAt      time.Time
@@ -26,4 +36,5 @@ type User struct {
 	Email          string
 	HashedPassword string
 	JwtToken       sql.NullString
+	IsChirpyRed    bool
 }
