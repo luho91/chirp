@@ -11,6 +11,7 @@ import(
 	"net/http"
 	"time"
 	"strings"
+	"sort"
 )
 
 type Chirp struct {
@@ -113,14 +114,21 @@ func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
 func (cfg *apiConfig) getChirps(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	authorFilter := r.URL.Query().Get("author_id")
+	sortFilter := r.URL.Query().Get("sort")
 
-	aF := uuid.UUID{}
+	var aF uuid.NullUUID
 
 	if authorFilter != "" {
-		aF, _ = uuid.Parse(authorFilter)
+		u, _ := uuid.Parse(authorFilter)
+		aF = uuid.NullUUID {
+			UUID: u,
+			Valid: true,
+		}
 	}
 
 	chirps, err := cfg.dbQueries.GetChirps(r.Context(), aF)
+	
+	fmt.Println(chirps)
 
 	if err != nil {
 		w.WriteHeader(500)
@@ -128,6 +136,17 @@ func (cfg *apiConfig) getChirps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if strings.ToLower(sortFilter) == "asc" {
+		sort.Slice(chirps, func(i, j int) bool {
+			return chirps[i].CreatedAt.Before(chirps[j].CreatedAt)
+		})
+	}
+
+	if strings.ToLower(sortFilter) == "desc" {
+		sort.Slice(chirps, func(i, j int) bool {
+			return chirps[i].CreatedAt.After(chirps[j].CreatedAt)
+		})
+	}
 
 	w.WriteHeader(200)
 	outChirps := []Chirp {}

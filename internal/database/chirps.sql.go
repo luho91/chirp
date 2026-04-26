@@ -71,8 +71,8 @@ const getChirps = `-- name: GetChirps :many
 SELECT id, created_at, updated_at, user_id, body FROM chirps WHERE ($1::uuid is NULL or user_id = $1::uuid) ORDER BY created_at ASC
 `
 
-func (q *Queries) GetChirps(ctx context.Context, dollar_1 uuid.UUID) ([]Chirp, error) {
-	rows, err := q.db.QueryContext(ctx, getChirps, dollar_1)
+func (q *Queries) GetChirps(ctx context.Context, userID uuid.NullUUID) ([]Chirp, error) {
+	rows, err := q.db.QueryContext(ctx, getChirps, userID)
 	if err != nil {
 		return nil, err
 	}
