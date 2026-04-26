@@ -171,9 +171,16 @@ func (cfg *apiConfig) premiumUser(w http.ResponseWriter, r *http.Request) {
 		} 						`json:"data"`
 	}
 
+	key, err := auth.GetAPIKey(r.Header)
+
+	if err != nil || key != cfg.polkaKey {
+		w.WriteHeader(401)
+		return
+	}
+
 	decoder := json.NewDecoder(r.Body)
 	params := parameters{}
-	err := decoder.Decode(&params)
+	err = decoder.Decode(&params)
 
 	if err != nil {
 		w.WriteHeader(500)

@@ -16,6 +16,7 @@ type apiConfig struct {
 	dbQueries		*database.Queries
 	platform		string
 	appSecret		string
+	polkaKey		string
 }
 
 func main() {
@@ -36,6 +37,7 @@ func main() {
 	apiCfg.dbQueries = dbQueries
 	apiCfg.platform = os.Getenv("PLATFORM")
 	apiCfg.appSecret = os.Getenv("APP_SECRET")
+	apiCfg.polkaKey = os.Getenv("POLKA_KEY")
 	serveMux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(".")))))
 	serveMux.HandleFunc("GET /api/healthz", healthz)
 	serveMux.HandleFunc("GET /admin/metrics", apiCfg.metricsRead)

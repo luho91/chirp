@@ -112,13 +112,22 @@ func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
 
 func (cfg *apiConfig) getChirps(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	chirps, err := cfg.dbQueries.GetChirps(r.Context())
+	authorFilter := r.URL.Query().Get("author_id")
+
+	aF := uuid.UUID{}
+
+	if authorFilter != "" {
+		aF, _ = uuid.Parse(authorFilter)
+	}
+
+	chirps, err := cfg.dbQueries.GetChirps(r.Context(), aF)
 
 	if err != nil {
 		w.WriteHeader(500)
 		fmt.Println("get chirp fail", err)
 		return
 	}
+
 
 	w.WriteHeader(200)
 	outChirps := []Chirp {}
